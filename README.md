@@ -1,6 +1,6 @@
 ## Summary
 
-Get a sqlite file with a history of package uploads in Debian. Do it by reading email list archives.
+Get a sqlite file with a history of package uploads in Debian.
 
 ## How to use
 
