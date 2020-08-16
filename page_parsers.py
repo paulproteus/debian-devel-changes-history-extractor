@@ -119,7 +119,10 @@ def metadata_from_message_body(body):
     maintainer_email = parsed_maintainer.address.username + '@' + parsed_maintainer.address.domain
     maintainer_name = parsed_maintainer.address.display_name
 
-    if changed_by is not None:
+    if changed_by is None:
+        changed_by_email = None
+        changed_by_name = None
+    else:
         parsed_changed_by = email.headerregistry.HeaderRegistry(
             default_class=email.headerregistry.SingleAddressHeader, use_default_map=False
         )('changed-by', changed_by)
