@@ -1,3 +1,4 @@
+import email.utils
 from urllib.parse import urljoin
 from html.parser import HTMLParser
 
@@ -93,3 +94,25 @@ class MessagePageParser(HTMLParser):
             self._in_li = False
             self._next_li_body_is_message_id = False
             return
+
+
+def metadata_from_message_body(body):
+    # Manually parse for speed; could rely on deb822 if this does not work consistently.
+    date = None
+    date_string = None
+    source = None
+    version = None
+    for line in body.split('\n'):
+        if not line:
+            continue
+        if not line[0] in ('S', 's', 'V', 'v', 'D', 'd'):
+            continue
+        before_colon = line[:9].lower()
+        if before_colon.startswith('source:'):
+            source = line.split(':', 1)[1].strip()
+        elif before_colon.startswith('version:'):
+            version = line.split(':', 1)[1].strip()
+        elif before_colon.startswith('date:'):
+            date_string = line.split(':', 1)[1].strip()
+    date = email.utils.parsedate_to_datetime(date_string).timestamp()
+    return date, source, version

@@ -28,6 +28,7 @@ async def fetch(url):
 
 
 def get_cache_db():
+    # Each month requires approx 25MB of cache storage.
     cache_dir = Path.home() / '.cache'
     cache_dir.mkdir(mode=0o700, exist_ok=True)
     cache_db = sqlite3.connect(cache_dir / "debian-devel-changes-history-extractor.sqlite")
@@ -35,6 +36,7 @@ def get_cache_db():
 
 
 async def main():
+    # Decide if we're operating over all months, or instead specific months via argv.
     import sys
     year_index = sys.argv.index('-y')
     if year_index != -1:
@@ -46,11 +48,13 @@ async def main():
         chosen_month = int(sys.argv[month_index + 1])
     else:
         chosen_month = None
+    # Download all HTML messages from debian-devel-changes for those months.
     cache_db = get_cache_db()
-    async for (year, month, last_updated) in get_cache_stale_months(cache_db):
+    async for (year, month, last_updated) in get_cache_stale_months(cache_db, chosen_year, chosen_month):
         if chosen_year is None or chosen_year == year:
             if chosen_month is None or chosen_month == month:
                 await store_messages_in_cache(cache_db, year, month, last_updated)
+    # Extract message ID & body text from each message.
     if chosen_month is None:
         chosen_months = range(1, 13)
     else:
@@ -62,9 +66,36 @@ async def main():
     relevant_months = sorted(itertools.product(chosen_years, chosen_months))
     for (year, month) in relevant_months:
         get_message_bodies(cache_db, year, month)
+    # Create output tables: `upload_history`, etc.
+    output_db = sqlite3.connect("upload_history.sqlite")
+    for (year, month) in relevant_months:
+        get_upload_history(cache_db, output_db, year, month)
+    # Close asyncio tasks in the aiohttp session.
     session = getattr(fetch, '_session', None)
     if session:
         await session.close()
+
+
+def get_upload_history(cache_db, output_db, year, month):
+    output_db.execute("""CREATE TABLE IF NOT EXISTS upload_history (
+        message_id text PRIMARY KEY,
+        source text NOT NULL,
+        version text NOT NULL,
+        date integer NOT NULL
+    );
+    """)
+    gzip_content_rows = cache_db.execute(
+        'SELECT message_id, body_gzip FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchall()
+    output_db.execute('BEGIN TRANSACTION;')
+    for (message_id, body_gzip) in gzip_content_rows:
+        body_bytes = gzip.decompress(body_gzip)
+        body = body_bytes.decode('utf-8')
+        date, source, version = page_parsers.metadata_from_message_body(body)
+        output_db.execute(
+            "INSERT OR IGNORE INTO upload_history (message_id, source, version, date) VALUES (?, ?, ?, ?)",
+            (message_id, source, version, date))
+    output_db.execute('COMMIT;')
+    print("Computed upload history for {year}-{month:02d}".format(year=year, month=month))
 
 
 def get_message_bodies(cache_db, year, month):
@@ -106,8 +137,8 @@ async def month_index_last_updated(year, month):
     return re.search('The last update was on [^.]*[.]', month_index_bytes.decode('ascii', 'replace')).group()
 
 
-async def get_cache_stale_months(cache_db):
-    months = [(1997, 8), (1997, 9), (1997, 10), (1997, 11), (1997, 12)]
+async def get_cache_stale_months(cache_db, chosen_year, chosen_month):
+    all_months = [(1997, 8), (1997, 9), (1997, 10), (1997, 11), (1997, 12)]
     tasks = []
     today_month = datetime.date.today().month
     today_year = datetime.date.today().year
@@ -115,8 +146,12 @@ async def get_cache_stale_months(cache_db):
         for month in range(1, 13):
             if year == today_year and month > today_month:
                 break
-            months.append((year, month))
-    for (year, month) in months:
+            all_months.append((year, month))
+    check_these_months = [
+        (year, month) for (year, month) in all_months
+        if (chosen_year is None or year == chosen_year) and (chosen_month is None or month == chosen_month)
+    ]
+    for (year, month) in check_these_months:
         tasks.append(get_cache_freshness(cache_db, year, month))
     results = await asyncio.gather(*tasks)
     for i, last_updated_text in enumerate(results):
