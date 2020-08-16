@@ -157,8 +157,8 @@ async def get_cache_stale_months(cache_db, chosen_year, chosen_month):
     for i, last_updated_text in enumerate(results):
         if last_updated_text is None:
             continue
-        year, month = months[i]
-        yield (year, month, last_updated_text)
+        year, month = check_these_months[i]
+        yield year, month, last_updated_text
 
 
 async def get_cache_freshness(cache_db, year, month):
