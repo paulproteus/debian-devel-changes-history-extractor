@@ -26,7 +26,7 @@ The program will exit with status 0 if it successfully processes all messages.
 ## Details
 
 This program downloads email list archives and extracts package upload history
-from it. It relies on the fact that every time a new package version is
+from them. It relies on the fact that every time a new package version is
 uploaded to Debian, an automated email is sent to the debian-devel-changes
 list with machine-readable metadata. 
 
