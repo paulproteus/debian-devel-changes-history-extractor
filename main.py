@@ -76,6 +76,15 @@ async def main():
         await session.close()
 
 
+def _in_query(query_before_in, items):
+    # Helper for using the sqlite3 `IN` operator, which requires creating a lot of
+    # question marks.
+    return query_before_in + 'IN ( ' + (
+        ','.join("?" * len(items)) +
+        " )"
+    )
+
+
 def get_upload_history(cache_db, output_db, year, month):
     output_db.execute("""CREATE TABLE IF NOT EXISTS upload_history (
         message_id text PRIMARY KEY,
@@ -84,7 +93,10 @@ def get_upload_history(cache_db, output_db, year, month):
         date integer NOT NULL,
         changed_by text,
         changed_by_name text,
-        changed_by_email text
+        changed_by_email text,
+        maintainer text NOT NULL,
+        maintainer_name text NOT NULL,
+        maintainer_email NOT NULL
     );
     """)
     # Notes about the table and its columns.
@@ -93,17 +105,38 @@ def get_upload_history(cache_db, output_db, year, month):
     # comes from a `Changed-by:` header in the upload metadata. It is present for recent messages
     # e.g. https://lists.debian.org/debian-devel-changes/2020/08/msg00003.html but not old messages
     # e.g. https://lists.debian.org/debian-devel-changes/1997/08/msg00000.html .
+    this_month_msg_ids = list(map(
+        lambda row: row[0], cache_db.execute(
+            'SELECT message_id FROM message_body_and_id WHERE year=? AND month=?', (year, month))
+    ))
+    already_processed_msg_ids = set(
+        map(
+            lambda row: row[0],
+            output_db.execute(
+                _in_query('SELECT message_id FROM upload_history WHERE message_id ', this_month_msg_ids),
+                this_month_msg_ids)
+        )
+    )
+    unprocessed_message_ids = [
+        msg_id for msg_id in this_month_msg_ids
+        if msg_id not in already_processed_msg_ids
+    ]
     gzip_content_rows = cache_db.execute(
-        'SELECT message_id, body_gzip FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchall()
-    output_db.execute('BEGIN TRANSACTION;')
+        _in_query('SELECT message_id, body_gzip FROM message_body_and_id WHERE message_id ', unprocessed_message_ids),
+        unprocessed_message_ids
+    ).fetchall()
+
+    output_db.execute("BEGIN TRANSACTION;")
     for (message_id, body_gzip) in gzip_content_rows:
-        body_bytes = gzip.decompress(body_gzip)
-        body = body_bytes.decode('utf-8')
-        metadata = (message_id, *page_parsers.metadata_from_message_body(body))
+        metadata = (message_id, *page_parsers.metadata_from_message_body(
+            gzip.decompress(body_gzip)))
         output_db.execute("""
-            INSERT OR IGNORE INTO upload_history (
-            message_id, date, source, version, changed_by, changed_by_name, changed_by_email
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO upload_history (
+            message_id,
+            date, source, version,
+            changed_by, changed_by_name, changed_by_email,
+            maintainer, maintainer_name, maintainer_email
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, metadata)
     output_db.execute('COMMIT;')
     print("Computed upload history for {year}-{month:02d}".format(year=year, month=month))
@@ -123,7 +156,7 @@ def get_message_bodies(cache_db, year, month):
         print("Using precomputed message bodies for {year}-{month:02d}".format(year=year, month=month))
         return
     gzip_content_rows = cache_db.execute(
-            'SELECT gzip_contents FROM url_contents WHERE year=? AND month=?', (year, month)).fetchall()
+        'SELECT gzip_contents FROM url_contents WHERE year=? AND month=?', (year, month)).fetchall()
     cache_db.execute('BEGIN TRANSACTION;')
     for row in gzip_content_rows:
         html = gzip.decompress(row[0]).decode('utf-8', 'replace')
@@ -208,8 +241,8 @@ async def download_message_urls_for_month(cache_db, year, month):
         message_urls.extend(parsed_date_index_page.message_urls)
     # Run all tasks, allowing exceptions to bubble up, without leaking any tasks.
     all_tasks = asyncio.gather(
-            *[store_url(cache_db, year, month, message_url) for message_url in message_urls]
-        )
+        *[store_url(cache_db, year, month, message_url) for message_url in message_urls]
+    )
     try:
         await all_tasks
     finally:
