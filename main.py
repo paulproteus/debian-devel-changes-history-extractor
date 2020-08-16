@@ -38,13 +38,13 @@ def get_cache_db():
 async def main():
     # Decide if we're operating over all months, or instead specific months via argv.
     import sys
-    year_index = sys.argv.index('-y')
-    if year_index != -1:
+    if '-y' in sys.argv:
+        year_index = sys.argv.index('-y')
         chosen_year = int(sys.argv[year_index + 1])
     else:
         chosen_year = None
-    month_index = sys.argv.index('-m')
-    if month_index != -1:
+    if '-m' in sys.argv:
+        month_index = sys.argv.index('-m')
         chosen_month = int(sys.argv[month_index + 1])
     else:
         chosen_month = None
