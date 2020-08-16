@@ -81,9 +81,13 @@ def get_upload_history(cache_db, output_db, year, month):
         message_id text PRIMARY KEY,
         source text NOT NULL,
         version text NOT NULL,
-        date integer NOT NULL
+        date integer NOT NULL,
+        changed_by_name text NOT NULL,
+        changed_by_email text NOT NULL
     );
     """)
+    # `changed_by_name` and `changed_by_email` come from GPG. At this stage of processing, we
+    # store the string "tbd" in both. A later stage will run GPG to compute that.
     gzip_content_rows = cache_db.execute(
         'SELECT message_id, body_gzip FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchall()
     output_db.execute('BEGIN TRANSACTION;')
@@ -91,9 +95,12 @@ def get_upload_history(cache_db, output_db, year, month):
         body_bytes = gzip.decompress(body_gzip)
         body = body_bytes.decode('utf-8')
         date, source, version = page_parsers.metadata_from_message_body(body)
-        output_db.execute(
-            "INSERT OR IGNORE INTO upload_history (message_id, source, version, date) VALUES (?, ?, ?, ?)",
-            (message_id, source, version, date))
+        output_db.execute("""
+            INSERT OR IGNORE INTO upload_history (
+            message_id, source, version, date, changed_by_name, changed_by_email
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (message_id, source, version, date, "tbd", "tbd"))
     output_db.execute('COMMIT;')
     print("Computed upload history for {year}-{month:02d}".format(year=year, month=month))
 
