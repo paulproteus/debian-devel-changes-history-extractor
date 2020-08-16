@@ -1,3 +1,4 @@
+import email.headerregistry
 import email.utils
 from urllib.parse import urljoin
 from html.parser import HTMLParser
@@ -102,17 +103,30 @@ def metadata_from_message_body(body):
     date_string = None
     source = None
     version = None
+    changed_by = None
+    changed_by_name = None
+    changed_by_email = None
     for line in body.split('\n'):
         if not line:
             continue
-        if not line[0] in ('S', 's', 'V', 'v', 'D', 'd'):
+        if not line[0] in ('S', 's', 'V', 'v', 'D', 'd', 'C', 'c'):
             continue
-        before_colon = line[:9].lower()
+        before_colon = line[:13].lower()
         if before_colon.startswith('source:'):
             source = line.split(':', 1)[1].strip()
         elif before_colon.startswith('version:'):
             version = line.split(':', 1)[1].strip()
         elif before_colon.startswith('date:'):
             date_string = line.split(':', 1)[1].strip()
+        elif before_colon.startswith('changed-by:'):
+            changed_by = line.split(':', 1)[1].strip()
     date = email.utils.parsedate_to_datetime(date_string).timestamp()
-    return date, source, version
+
+    if changed_by is not None:
+        parsed = email.headerregistry.HeaderRegistry(
+            default_class=email.headerregistry.SingleAddressHeader, use_default_map=False
+        )('changed-by', changed_by)
+        changed_by_email = parsed.address.username + '@' + parsed.address.domain
+        changed_by_name = parsed.address.display_name
+
+    return date, source, version, changed_by, changed_by_name, changed_by_email

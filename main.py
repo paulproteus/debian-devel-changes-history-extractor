@@ -82,25 +82,29 @@ def get_upload_history(cache_db, output_db, year, month):
         source text NOT NULL,
         version text NOT NULL,
         date integer NOT NULL,
-        changed_by_name text NOT NULL,
-        changed_by_email text NOT NULL
+        changed_by text,
+        changed_by_name text,
+        changed_by_email text
     );
     """)
-    # `changed_by_name` and `changed_by_email` come from GPG. At this stage of processing, we
-    # store the string "tbd" in both. A later stage will run GPG to compute that.
+    # Notes about the table and its columns.
+    #
+    # The `changed_by` series of columns (`changed_by`, `changed_by_name`, `changed_by_email`)
+    # comes from a `Changed-by:` header in the upload metadata. It is present for recent messages
+    # e.g. https://lists.debian.org/debian-devel-changes/2020/08/msg00003.html but not old messages
+    # e.g. https://lists.debian.org/debian-devel-changes/1997/08/msg00000.html .
     gzip_content_rows = cache_db.execute(
         'SELECT message_id, body_gzip FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchall()
     output_db.execute('BEGIN TRANSACTION;')
     for (message_id, body_gzip) in gzip_content_rows:
         body_bytes = gzip.decompress(body_gzip)
         body = body_bytes.decode('utf-8')
-        date, source, version = page_parsers.metadata_from_message_body(body)
+        metadata = (message_id, *page_parsers.metadata_from_message_body(body))
         output_db.execute("""
             INSERT OR IGNORE INTO upload_history (
-            message_id, source, version, date, changed_by_name, changed_by_email
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (message_id, source, version, date, "tbd", "tbd"))
+            message_id, date, source, version, changed_by, changed_by_name, changed_by_email
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, metadata)
     output_db.execute('COMMIT;')
     print("Computed upload history for {year}-{month:02d}".format(year=year, month=month))
 
