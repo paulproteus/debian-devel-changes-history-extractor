@@ -28,7 +28,9 @@ class DateIndexPageParser(HTMLParser):
             self._in_link = False
             if self._current_link_text == 'next page':
                 self.next_date_index_page = urljoin(self.url, self._current_link_href)
-            elif self._current_link_text.strip().startswith('Accepted '):
+            elif 'msg' in self._current_link_href:
+                # There's no consistent subject line pattern to look for, so harvest everything that
+                # looks like a message based on the href= containing 'msg'.
                 self.message_urls.append(urljoin(self.url, self._current_link_href))
             self._current_link_href = None
             self._current_link_text = None
