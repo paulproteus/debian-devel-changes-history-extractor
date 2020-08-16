@@ -88,15 +88,17 @@ def _in_query(query_before_in, items):
 def get_upload_history(cache_db, output_db, year, month):
     output_db.execute("""CREATE TABLE IF NOT EXISTS upload_history (
         message_id text PRIMARY KEY,
+        date integer NOT NULL,
         source text NOT NULL,
         version text NOT NULL,
-        date integer NOT NULL,
         changed_by text,
         changed_by_name text,
         changed_by_email text,
         maintainer text NOT NULL,
         maintainer_name text NOT NULL,
-        maintainer_email NOT NULL
+        maintainer_email NOT NULL,
+        nmu boolean NOT NULL,
+        changes text NOT NULL
     );
     """)
     # Notes about the table and its columns.
@@ -135,8 +137,9 @@ def get_upload_history(cache_db, output_db, year, month):
             message_id,
             date, source, version,
             changed_by, changed_by_name, changed_by_email,
-            maintainer, maintainer_name, maintainer_email
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            maintainer, maintainer_name, maintainer_email,
+            nmu, changes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, metadata)
     output_db.execute('COMMIT;')
     print("Computed upload history for {year}-{month:02d}".format(year=year, month=month))

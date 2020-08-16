@@ -1,9 +1,9 @@
 import debian.deb822
 import email.headerregistry
 import email.utils
-import gzip
-from urllib.parse import urljoin
 from html.parser import HTMLParser
+import re
+from urllib.parse import urljoin
 
 
 class DateIndexPageParser(HTMLParser):
@@ -99,13 +99,18 @@ class MessagePageParser(HTMLParser):
             return
 
 
+nmu_version_re = re.compile(r"(-\S+\.\d+|\+nmu\d+)$")
+nmu_changelog_re = re.compile(r"\s+\*\s+.*(NMU|non[- ]maintainer)", re.IGNORECASE + re.MULTILINE)
+
+
 def metadata_from_message_body(body):
     body_parsed = dict(debian.deb822.Deb822(body))
     date_string = body_parsed['Date']
     source = body_parsed['Source']
     version = body_parsed['Version']
     changed_by = body_parsed.get('Changed-By')
-    maintainer = body_parsed['Version']
+    maintainer = body_parsed['Maintainer']
+    changes = body_parsed['Changes']
 
     date = email.utils.parsedate_to_datetime(date_string).timestamp()
     parsed_maintainer = email.headerregistry.HeaderRegistry(
@@ -121,8 +126,14 @@ def metadata_from_message_body(body):
         changed_by_email = parsed_changed_by.address.username + '@' + parsed_changed_by.address.domain
         changed_by_name = parsed_changed_by.address.display_name
 
+    # We use a version number match regular expression, which gives false positives for example
+    # with -x+y.z.w, along with checking a regexp against changes.
+    # This might change in the future, see DEP1 http://wiki.debian.org/NmuDep
+    nmu = bool(nmu_version_re.search(version) and nmu_changelog_re.search(changes))
+
     return (
         date, source, version,
         changed_by, changed_by_name, changed_by_email,
         maintainer, maintainer_name, maintainer_email,
+        nmu, changes,
     )
