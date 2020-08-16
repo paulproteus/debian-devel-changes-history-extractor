@@ -38,3 +38,58 @@ class DateIndexPageParser(HTMLParser):
     def handle_data(self, data):
         if self._in_link:
             self._current_link_text += data
+
+
+class MessagePageParser(HTMLParser):
+    def error(self, message):
+        pass
+
+    def __init__(self):
+        super().__init__()
+        self.message_id = None
+        self.message_body = None
+        self._next_li_body_is_message_id = False
+        self._in_li = False
+        self._current_text = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'li' or tag == 'em' or tag == 'pre':
+            self._current_text = ''
+        if tag == 'li':
+            self._in_li = True
+
+    def handle_data(self, data):
+        if self._current_text is not None:
+            self._current_text += data
+
+    def handle_endtag(self, tag):
+        if tag == 'pre':
+            self.message_body = self._current_text
+            self._current_text = None
+            return
+
+        if tag == 'em':
+            if self._in_li and self._current_text.lower().strip() == 'message-id':
+                self._next_li_body_is_message_id = True
+            self._current_text = ''
+            return
+
+        if tag == 'li':
+            if self._next_li_body_is_message_id:
+                # This has a format like:
+                # ': <[🔎]\xa0Pine.LNX.3.96.example@example.com>'
+                # Remove the <[🔎]\xa0 & the colon.
+                messy_message_id = self._current_text
+                if messy_message_id.startswith(': '):
+                    messy_message_id = messy_message_id[2:]
+                messy_message_id = messy_message_id.replace('<[🔎]\xa0', '')
+                messy_message_id = messy_message_id.strip()
+                if messy_message_id[0] == '<':
+                    messy_message_id = messy_message_id[1:]
+                if messy_message_id[-1] == '>':
+                    messy_message_id = messy_message_id[:-1]
+                self.message_id = messy_message_id
+            self._current_text = None
+            self._in_li = False
+            self._next_li_body_is_message_id = False
+            return

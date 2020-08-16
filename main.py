@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import gzip
 import io
+import itertools
 from pathlib import Path
 import re
 import sqlite3
@@ -34,13 +35,65 @@ def get_cache_db():
 
 
 async def main():
+    import sys
+    year_index = sys.argv.index('-y')
+    if year_index != -1:
+        chosen_year = int(sys.argv[year_index + 1])
+    else:
+        chosen_year = None
+    month_index = sys.argv.index('-m')
+    if month_index != -1:
+        chosen_month = int(sys.argv[month_index + 1])
+    else:
+        chosen_month = None
     cache_db = get_cache_db()
     async for (year, month, last_updated) in get_cache_stale_months(cache_db):
-        await store_messages_in_cache(cache_db, year, month, last_updated)
-    print('want to compute_upload_history()')
+        if chosen_year is None or chosen_year == year:
+            if chosen_month is None or chosen_month == month:
+                await store_messages_in_cache(cache_db, year, month, last_updated)
+    if chosen_month is None:
+        chosen_months = range(1, 13)
+    else:
+        chosen_months = [chosen_month]
+    if chosen_year is None:
+        chosen_years = range(1997, 2022)
+    else:
+        chosen_years = [chosen_year]
+    relevant_months = sorted(itertools.product(chosen_years, chosen_months))
+    for (year, month) in relevant_months:
+        get_message_bodies(cache_db, year, month)
     session = getattr(fetch, '_session', None)
     if session:
         await session.close()
+
+
+def get_message_bodies(cache_db, year, month):
+    cache_db.execute("""CREATE TABLE IF NOT EXISTS message_body_and_id (
+        message_id text PRIMARY KEY,
+        year integer NOT NULL,
+        month integer NOT NULL,
+        body_gzip blob NOT NULL
+    );""")
+    # Skip if already done
+    is_done = cache_db.execute(
+        'SELECT COUNT(*) FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchone()[0]
+    if is_done:
+        print("Using precomputed message bodies for {year}-{month:02d}".format(year=year, month=month))
+        return
+    gzip_content_rows = cache_db.execute(
+            'SELECT gzip_contents FROM url_contents WHERE year=? AND month=?', (year, month)).fetchall()
+    cache_db.execute('BEGIN TRANSACTION;')
+    for row in gzip_content_rows:
+        html = gzip.decompress(row[0]).decode('utf-8', 'replace')
+        parser = page_parsers.MessagePageParser()
+        parser.feed(html)
+        parser.close()
+        cache_db.execute("""INSERT INTO message_body_and_id (
+            message_id, year, month, body_gzip
+        ) VALUES (?, ?, ?, ?)""", (
+            parser.message_id, year, month, gzip.compress(parser.message_body.encode('utf-8'))
+        ))
+    cache_db.execute('COMMIT;')
 
 
 async def month_index_last_updated(year, month):
@@ -63,7 +116,8 @@ async def get_cache_stale_months(cache_db):
             if year == today_year and month > today_month:
                 break
             months.append((year, month))
-            tasks.append(get_cache_freshness(cache_db, year, month))
+    for (year, month) in months:
+        tasks.append(get_cache_freshness(cache_db, year, month))
     results = await asyncio.gather(*tasks)
     for i, last_updated_text in enumerate(results):
         if last_updated_text is None:
@@ -128,8 +182,8 @@ async def store_url(cache_db, year, month, url):
     cache_db.execute("""
     CREATE TABLE IF NOT EXISTS url_contents (
         url string PRIMARY KEY,
-        year integer,
-        month integer,
+        year integer NOT NULL,
+        month integer NOT NULL,
         gzip_contents blob
     );
     """)
