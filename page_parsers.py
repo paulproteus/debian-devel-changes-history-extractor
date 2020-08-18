@@ -52,82 +52,114 @@ class MessagePageParser(HTMLParser):
         super().__init__()
         self.message_id = None
         self.message_body = None
+        self._message_body_buffer = None
         self._next_li_body_is_message_id = False
         self._in_li = False
         self._current_text = None
 
-    def handle_starttag(self, tag, attrs):
-        if tag == 'li' or tag == 'em' or tag == 'pre':
-            self._current_text = ''
-        if tag == 'li':
-            self._in_li = True
+    def handle_comment(self, data):
+        # Rely on MHonArc's template to tell us when the body starts & ends.
+        # Earlier versions of this code relied on <pre> indicating the start of body, but alas,
+        # some messages have no text/plain part and therefore no <pre>.
+        if data.strip() == 'X-Body-of-Message':
+            self._message_body_buffer = []
+        if data.strip() == 'X-Body-of-Message-End':
+            self.message_body = ''.join(self._message_body_buffer)
+            self._message_body_buffer = None
+
+        # Rely on MHonArc's template to tell us the Message ID.
+        if data.strip().startswith('X-Message-Id:'):
+            self.message_id = data[len('X-Message-Id:'):].strip()
 
     def handle_data(self, data):
-        if self._current_text is not None:
-            self._current_text += data
-
-    def handle_endtag(self, tag):
-        if tag == 'pre':
-            self.message_body = self._current_text
-            self._current_text = None
-            return
-
-        if tag == 'em':
-            if self._in_li and self._current_text.lower().strip() == 'message-id':
-                self._next_li_body_is_message_id = True
-            self._current_text = ''
-            return
-
-        if tag == 'li':
-            if self._next_li_body_is_message_id:
-                # This has a format like:
-                # ': <[🔎]\xa0Pine.LNX.3.96.example@example.com>'
-                # Remove the <[🔎]\xa0 & the colon.
-                messy_message_id = self._current_text
-                if messy_message_id.startswith(': '):
-                    messy_message_id = messy_message_id[2:]
-                messy_message_id = messy_message_id.replace('<[🔎]\xa0', '')
-                messy_message_id = messy_message_id.strip()
-                if messy_message_id[0] == '<':
-                    messy_message_id = messy_message_id[1:]
-                if messy_message_id[-1] == '>':
-                    messy_message_id = messy_message_id[:-1]
-                self.message_id = messy_message_id
-            self._current_text = None
-            self._in_li = False
-            self._next_li_body_is_message_id = False
-            return
+        if self._message_body_buffer is not None:
+            self._message_body_buffer.append(data)
 
 
 nmu_version_re = re.compile(r"(-\S+\.\d+|\+nmu\d+)$")
 nmu_changelog_re = re.compile(r"\s+\*\s+.*(NMU|non[- ]maintainer)", re.IGNORECASE + re.MULTILINE)
 
+# Some messages have invalid time data that Python rejects.
+BAD_TIME_DATA = {
+    # Invalid time zones
+    " +5300": "", " +8000": "", " -5000": "", " -4000": "", " +3000": "",
+    # Invalid hour
+    " 24:": " 23: ", " 26:": " 23:", " 85:": " 00:", " 33:": " 00:", " 29:": " 00:",
+    # Invalid year
+    ' 97 ': ' 1997 ',
+    # Invalid time (formatting or out-of-bounds hours/seconds)
+    "08.30:43": "08:30:43", "18:63:32": "18:00:32", "00:59:60": "00:01:00",
+    # Invalid seconds
+    ":85 ": ":00 ", ":82 ": ":00 ",
+    # Invalid day
+    " 29 Feb 1999 ": " 28 Feb 1999 ",  "0 Apr 2000": "1 Apr 2000", "32 May 2004": "1 May 2004",
+    # Invalid month
+    " Sept ": " Sep ", " Augh ": " Aug ",
+    # Valid but French month
+    "Fev 2004": "Feb 2004", " Mars ": " Mar ", " Mai ": " May ", "30 Jui 2002": "30 Jul 2002",
+    # April & December, in some language??
+    " 26 Apt 1998 ": " 26 Apr 1998 ", " Dev 1998": " Dec 1998", " Deb 1999": " Dec 1999",
+    # Valid but German month?
+    " Okt 1998": " Oct 1998", " Dez ": " Dec ", " Jen 1999 ": " Jun 1999 ", " Auf 2000 ": " Aug 2000 ",
+    " Dic 2002": " Dec 2002", " Dic 2003": " Dec 2003", " Deb 2004": " Dec 2004",
+    " Okt 2003": " Oct 2003", "Seb 2005": "Sep 2005", "Set 2005": "Sep 2005", "Aut 2007": "Aug 2007",
+    "Augl 2007": "Aug 2007",
+    # Invalid day
+    "Thur, ": "Thu, ",
+    # Manually-written transposed month & day?
+    "May, 21 Sun 2010 ": "Sun, May 21 2010 ", "May, 9 Sun 2010 ": "Sun, May 9 2010 ",
+    "Sep, 23 Thu 2004": "Thu, 23 Sep 2004", "May, 19 Sun 2010": "Sun, 19 May 2010",
+    # Valid but truncated month?
+    " Februar 2001 ": " Feb 2001 ", "Sat, 25 My 2002": "Sat, 25 May 2002", " My 2002": " May 2002",
+    "Agu 2003": "Aug 2003", "Ago 2003": "Aug 2003", "Au 2006": "Aug 2006",
+    # Manually-written month and/or day?
+    " 14 Sat 2002 ": " 14 Sep 2002 ", "19 Now 2002": "19 Nov 2002", "5 Agu 2003": "5 Aug 2003",
+    "05 Nove 2003": "05 Nov 2003", "Marc 2004": "Mar 2004", "10 Juk 2004": "10 Jul 2004",
+    "05 Decp 2004": "05 Dec 2004", "22 Wed 2002": "22 May 2002",
+    "Sun,  15 Jen 2005": "Sun, 15 Jan 2005", "30 Sun 2005": "30 Jan 2005", "31 Sun 2005": "31 Jan 2005",
+}
+
 
 def metadata_from_message_body(body):
     body_parsed = dict(debian.deb822.Deb822(body))
-    date_string = body_parsed['Date']
     source = body_parsed['Source']
+    # Some uploads in 1997 lack a Date header. Ignore them.
+    date_string = body_parsed.get('Date')
+    if date_string is None:
+        return None
     version = body_parsed['Version']
     changed_by = body_parsed.get('Changed-By')
     maintainer = body_parsed['Maintainer']
     changes = body_parsed['Changes']
 
-    date = email.utils.parsedate_to_datetime(date_string).timestamp()
+    try:
+        date = email.utils.parsedate_to_datetime(date_string).timestamp()
+    except Exception:
+        for bad_string in BAD_TIME_DATA:
+            date_string = date_string.replace(bad_string, BAD_TIME_DATA[bad_string])
+        date = email.utils.parsedate_to_datetime(date_string).timestamp()
+
+    # Use AddressHeader not SingleAddressHeader because of headers like
+    # Maintainer: Foo, Bar <example@example.com>
+    # which break SingleAddressHeader (there are "two addresses.")
+    #
+    # Also replace '\n' with ' ' so Python can parse it.
     parsed_maintainer = email.headerregistry.HeaderRegistry(
-        default_class=email.headerregistry.SingleAddressHeader, use_default_map=False
-    )('maintainer', maintainer)
-    maintainer_email = parsed_maintainer.address.username + '@' + parsed_maintainer.address.domain
-    maintainer_name = parsed_maintainer.address.display_name
+        default_class=email.headerregistry.AddressHeader, use_default_map=False
+    )('maintainer', maintainer.replace('\n', ' '))
+    maintainer_email = parsed_maintainer.addresses[-1].username + '@' + parsed_maintainer.addresses[-1].domain
+    maintainer_name = parsed_maintainer.addresses[-1].display_name
 
     if changed_by is None:
         changed_by_email = None
         changed_by_name = None
     else:
+        # Use AddressHeader not SingleAddressHeader for similar reasons as the Maintainer header above.
         parsed_changed_by = email.headerregistry.HeaderRegistry(
-            default_class=email.headerregistry.SingleAddressHeader, use_default_map=False
+            default_class=email.headerregistry.AddressHeader, use_default_map=False
         )('changed-by', changed_by)
-        changed_by_email = parsed_changed_by.address.username + '@' + parsed_changed_by.address.domain
-        changed_by_name = parsed_changed_by.address.display_name
+        changed_by_email = parsed_changed_by.addresses[-1].username + '@' + parsed_changed_by.addresses[-1].domain
+        changed_by_name = parsed_changed_by.addresses[-1].display_name
 
     # We use a version number match regular expression, which gives false positives for example
     # with -x+y.z.w, along with checking a regexp against changes.

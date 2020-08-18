@@ -6,6 +6,8 @@ import itertools
 from pathlib import Path
 import re
 import sqlite3
+import sys
+import traceback
 
 import aiohttp
 
@@ -85,6 +87,9 @@ def _in_query(query_before_in, items):
     )
 
 
+BEGIN_PGP_REGEX = re.compile(rb'^ *-+ *BEGIN PGP', re.MULTILINE)
+
+
 def get_upload_history(cache_db, output_db, year, month):
     output_db.execute("""CREATE TABLE IF NOT EXISTS upload_history (
         message_id text PRIMARY KEY,
@@ -126,12 +131,64 @@ def get_upload_history(cache_db, output_db, year, month):
     gzip_content_rows = cache_db.execute(
         _in_query('SELECT message_id, body_gzip FROM message_body_and_id WHERE message_id ', unprocessed_message_ids),
         unprocessed_message_ids
-    ).fetchall()
+    )
 
     output_db.execute("BEGIN TRANSACTION;")
     for (message_id, body_gzip) in gzip_content_rows:
-        metadata = (message_id, *page_parsers.metadata_from_message_body(
-            gzip.decompress(body_gzip)))
+        body = gzip.decompress(body_gzip)
+
+        # Attempt to parse the message three times. First, try parsing the whole message.
+        # This is important for early (1997-era) messages which lack
+        # Try parsing it as-is.
+        try:
+            full_message_parsed_result = page_parsers.metadata_from_message_body(body)
+        except Exception:
+            full_message_parsed_result = None
+
+        if False and full_message_parsed_result is None:
+            # Seek forward to the start of the "-----BEGIN PGP SIGNED MESSAGE-----", or
+            # skip the message_id if there is none.
+            pgp_regex_result = BEGIN_PGP_REGEX.search(body)
+            if pgp_regex_result is None:
+                error_fd = (Path.home() / '.cache' / 'ddc-errors.txt').open('ab')
+                error_text = f'msg_id has no content? {message_id}\n'.format(message_id=message_id)
+                print(error_text, file=sys.stderr)
+                error_fd.write(error_text.encode('utf-8'))
+                error_fd.write(body)
+                error_fd.write(b'\n')
+                print("see also ~/.cache/ddc-errors.txt", file=sys.stderr)
+                error_fd.close()
+                continue
+
+            # Slice body so it begins at the PGP metadata.
+            sliced_body = body[pgp_regex_result.span()[0]:]
+        else:
+            sliced_body = body
+
+        # If there's no 'Source: ' line, then it's not an upload, so skip it.
+        if b'\nSource: ' not in sliced_body:
+            print("Skipping message_id because no source package line can be found " + message_id)
+            continue
+
+        try:
+            results = page_parsers.metadata_from_message_body(sliced_body)
+        except Exception:
+            error_fd = (Path.home() / '.cache' / 'ddc-errors.txt').open('ab')
+            error_text = f'msg_id fail {message_id}\n'.format(message_id=message_id)
+            error_text += traceback.format_exc()
+            print(error_text, file=sys.stderr)
+            error_fd.write(error_text.encode('utf-8'))
+            error_fd.write(sliced_body)
+            error_fd.write(b'\n')
+            print("see also ~/.cache/ddc-errors.txt", file=sys.stderr)
+            error_fd.close()
+            continue
+
+        if results is None:
+            print("Skipping message_id because no date line can be found " + message_id)
+            continue
+
+        metadata = (message_id, *results)
         output_db.execute("""
             INSERT INTO upload_history (
             message_id,
@@ -152,6 +209,9 @@ def get_message_bodies(cache_db, year, month):
         month integer NOT NULL,
         body_gzip blob NOT NULL
     );""")
+    cache_db.execute(
+        """CREATE INDEX IF NOT EXISTS message_body_and_id__year_month_index
+        ON message_body_and_id (year, month);""")
     # Skip if already done
     is_done = cache_db.execute(
         'SELECT COUNT(*) FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchone()[0]
@@ -166,10 +226,14 @@ def get_message_bodies(cache_db, year, month):
         parser = page_parsers.MessagePageParser()
         parser.feed(html)
         parser.close()
+        body_gzip = gzip.compress(parser.message_body.encode('utf-8'))
+        if parser.message_body is None:
+            import pdb; pdb.set_trace()
+            parser.message_body = ''
         cache_db.execute("""INSERT INTO message_body_and_id (
             message_id, year, month, body_gzip
         ) VALUES (?, ?, ?, ?)""", (
-            parser.message_id, year, month, gzip.compress(parser.message_body.encode('utf-8'))
+            parser.message_id, year, month, body_gzip,
         ))
     cache_db.execute('COMMIT;')
 
@@ -269,6 +333,9 @@ async def store_url(cache_db, year, month, url):
         gzip_contents blob
     );
     """)
+    cache_db.execute("""
+        CREATE INDEX IF NOT EXISTS url_contents__year_month_index
+        ON url_contents (year, month);""")
     contents = await fetch(url)
     gzip_contents = io.BytesIO()
     gzip_fd = gzip.GzipFile(fileobj=gzip_contents, mode='wb')
