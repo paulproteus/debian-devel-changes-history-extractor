@@ -87,7 +87,7 @@ BAD_TIME_DATA = {
     " 24:": " 23: ", " 26:": " 23:", " 85:": " 00:", " 33:": " 00:", " 29:": " 00:",
     # Invalid year
     ' 97 ': ' 1997 ',
-    # Invalid time (formatting or out-of-bounds hours/seconds)
+    # Invalid time (formatting or out-of-bounds hours/seconds) (and an actual leap second)
     "08.30:43": "08:30:43", "18:63:32": "18:00:32", "00:59:60": "00:01:00",
     # Invalid seconds
     ":85 ": ":00 ", ":82 ": ":00 ",
