@@ -33,8 +33,7 @@ def get_cache_db():
     # Each month requires approx 25MB of cache storage.
     cache_dir = Path.home() / '.cache'
     cache_dir.mkdir(mode=0o700, exist_ok=True)
-    cache_db = sqlite3.connect(cache_dir / "debian-devel-changes-history-extractor.sqlite")
-    return cache_db.cursor()
+    return sqlite3.connect(cache_dir / "debian-devel-changes-history-extractor.sqlite")
 
 
 async def main():
@@ -52,10 +51,10 @@ async def main():
         chosen_month = None
     # Download all HTML messages from debian-devel-changes for those months.
     cache_db = get_cache_db()
-    async for (year, month, last_updated) in get_cache_stale_months(cache_db, chosen_year, chosen_month):
+    async for (year, month, last_updated) in get_cache_stale_months(cache_db.cursor(), chosen_year, chosen_month):
         if chosen_year is None or chosen_year == year:
             if chosen_month is None or chosen_month == month:
-                await store_messages_in_cache(cache_db, year, month, last_updated)
+                await store_messages_in_cache(cache_db.cursor(), year, month, last_updated)
     # Extract message ID & body text from each message.
     if chosen_month is None:
         chosen_months = range(1, 13)
@@ -71,7 +70,7 @@ async def main():
     # Create output tables: `upload_history`, etc.
     output_db = sqlite3.connect("upload_history.sqlite")
     for (year, month) in relevant_months:
-        get_upload_history(cache_db, output_db, year, month)
+        get_upload_history(cache_db.cursor(), output_db, year, month)
     # Close asyncio tasks in the aiohttp session.
     session = getattr(fetch, '_session', None)
     if session:
@@ -203,24 +202,25 @@ def get_upload_history(cache_db, output_db, year, month):
 
 
 def get_message_bodies(cache_db, year, month):
-    cache_db.execute("""CREATE TABLE IF NOT EXISTS message_body_and_id (
+    cursor = cache_db.cursor()
+    cursor.execute("""CREATE TABLE IF NOT EXISTS message_body_and_id (
         message_id text PRIMARY KEY,
         year integer NOT NULL,
         month integer NOT NULL,
         body_gzip blob NOT NULL
     );""")
-    cache_db.execute(
+    cursor.execute(
         """CREATE INDEX IF NOT EXISTS message_body_and_id__year_month_index
         ON message_body_and_id (year, month);""")
     # Skip if already done
-    is_done = cache_db.execute(
-        'SELECT COUNT(*) FROM message_body_and_id WHERE year=? AND month=?', (year, month)).fetchone()[0]
-    if is_done:
+    one_message_id_imported_this_month = cursor.execute(
+        'SELECT message_id FROM message_body_and_id WHERE year=? AND month=? LIMIT 1', (year, month)).fetchone()
+    if one_message_id_imported_this_month:
         print("Using precomputed message bodies for {year}-{month:02d}".format(year=year, month=month))
         return
-    gzip_content_rows = cache_db.execute(
-        'SELECT gzip_contents FROM url_contents WHERE year=? AND month=?', (year, month)).fetchall()
-    cache_db.execute('BEGIN TRANSACTION;')
+    gzip_content_rows = cache_db.cursor().execute(
+        'SELECT gzip_contents FROM url_contents WHERE year=? AND month=?', (year, month))
+    cursor.execute('BEGIN TRANSACTION;')
     for row in gzip_content_rows:
         html = gzip.decompress(row[0]).decode('utf-8', 'replace')
         parser = page_parsers.MessagePageParser()
@@ -235,7 +235,7 @@ def get_message_bodies(cache_db, year, month):
         ) VALUES (?, ?, ?, ?)""", (
             parser.message_id, year, month, body_gzip,
         ))
-    cache_db.execute('COMMIT;')
+    cursor.execute('COMMIT;')
 
 
 async def month_index_last_updated(year, month):
@@ -284,12 +284,29 @@ async def get_cache_freshness(cache_db, year, month):
     return current_last_updated
 
 
-async def store_messages_in_cache(cache_db, year, month, current_last_updated):
+async def store_messages_in_cache(cache_db_cursor, year, month, current_last_updated):
     print("Downloading messages for {year}-{month:02d}".format(year=year, month=month))
-    cache_db.execute("BEGIN TRANSACTION;")
-    await download_message_urls_for_month(cache_db, year, month)
-    update_cached_month_index_last_updated(cache_db, year, month, current_last_updated)
-    cache_db.execute("COMMIT;")
+    cache_db_cursor.execute("""
+    CREATE TABLE IF NOT EXISTS url_contents (
+        url string PRIMARY KEY,
+        year integer NOT NULL,
+        month integer NOT NULL,
+        gzip_contents blob
+    );
+    """)
+    cache_db_cursor.execute("""
+        CREATE INDEX IF NOT EXISTS url_contents__year_month_index
+        ON url_contents (year, month);""")
+    cache_db_cursor.execute("BEGIN TRANSACTION;")
+    await download_message_urls_for_month(cache_db_cursor, year, month)
+    cache_db_cursor.execute(
+        "DELETE FROM month_index_last_updated WHERE year=? AND month=?", (year, month))
+    cache_db_cursor.execute(
+        "INSERT INTO month_index_last_updated (year, month, last_updated) VALUES (?, ?, ?)",
+        (year, month, current_last_updated)
+    )
+    cache_db_cursor.execute("COMMIT;")
+    cache_db_cursor.close()
 
 
 async def download_message_urls_for_month(cache_db, year, month):
@@ -317,30 +334,13 @@ async def download_message_urls_for_month(cache_db, year, month):
         all_tasks.cancel()
 
 
-def update_cached_month_index_last_updated(cache_db, year, month, current_last_updated):
-    cache_db.execute(
-        "INSERT INTO month_index_last_updated (year, month, last_updated) VALUES (?, ?, ?)",
-        (year, month, current_last_updated)
-    )
-
-
 async def store_url(cache_db, year, month, url):
-    cache_db.execute("""
-    CREATE TABLE IF NOT EXISTS url_contents (
-        url string PRIMARY KEY,
-        year integer NOT NULL,
-        month integer NOT NULL,
-        gzip_contents blob
-    );
-    """)
-    cache_db.execute("""
-        CREATE INDEX IF NOT EXISTS url_contents__year_month_index
-        ON url_contents (year, month);""")
     contents = await fetch(url)
     gzip_contents = io.BytesIO()
     gzip_fd = gzip.GzipFile(fileobj=gzip_contents, mode='wb')
     gzip_fd.write(contents)
     gzip_fd.close()
+    cache_db.execute("DELETE FROM url_contents WHERE url=? AND year=? AND month=?", (url, year, month))
     cache_db.execute(
         "INSERT INTO url_contents (url, year, month, gzip_contents) VALUES (?, ?, ?, ?)",
         (url, year, month, gzip_contents.getvalue())
