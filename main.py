@@ -61,7 +61,8 @@ async def main():
     else:
         chosen_months = [chosen_month]
     if chosen_year is None:
-        chosen_years = range(1997, 2022)
+        # Starting at 2008, because earlier years have some parsing problems; would be nice to fix them.
+        chosen_years = range(2008, 2022)
     else:
         chosen_years = [chosen_year]
     relevant_months = sorted(itertools.product(chosen_years, chosen_months))

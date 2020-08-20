@@ -1,12 +1,13 @@
 import debian.deb822
 import email.headerregistry
 import email.utils
-from html.parser import HTMLParser
+import html
+import html.parser
 import re
 from urllib.parse import urljoin
 
 
-class DateIndexPageParser(HTMLParser):
+class DateIndexPageParser(html.parser.HTMLParser):
     def error(self, message):
         pass
 
@@ -44,7 +45,7 @@ class DateIndexPageParser(HTMLParser):
             self._current_link_text += data
 
 
-class MessagePageParser(HTMLParser):
+class MessagePageParser(html.parser.HTMLParser):
     def error(self, message):
         pass
 
@@ -69,7 +70,8 @@ class MessagePageParser(HTMLParser):
 
         # Rely on MHonArc's template to tell us the Message ID.
         if data.strip().startswith('X-Message-Id:'):
-            self.message_id = data[len('X-Message-Id:'):].strip()
+            raw_data = data[len('X-Message-Id:'):].strip()
+            self.message_id = html.unescape(raw_data)
 
     def handle_data(self, data):
         if self._message_body_buffer is not None:
