@@ -7,8 +7,8 @@ cache file for performance. It parses the email sent to debian-devel-changes tha
 It takes care to keep the cache fresh and not re-download URLs unnecessarily.
 
 In the future, it would be possible to adjust the code to avoid reading data from the web, e.g., reading email archives
-(mbox files) directly. I personally like this approach of reading data from the web since it allows the program to work
-properly with no special privileges.
+(mbox files) directly. I personally think reading data from the web is fine; it allows the program to operate
+with no special privileges.
 
 The short-term purpose is to allow immediate social science analysis of Debian uploads.
 
