@@ -52,17 +52,17 @@ development. If you lack the disk space to cache all messages for all years, try
 
 ### Query `upload_history.sqlite`
 
-`upload_history.sqlite` will contain an `upload_history` table with the following columns:
+`upload_history.sqlite` will contain an `upload_history` table with the following columns.
 
-- id: int: autoincrementing numeric ID; used for foreign keys
-- source: string: Package name (i.e., Debian source package name)
-- version: string: Package version in string format
-- date: int: Epoch timestamp of the date within the upload metadata
-- changed_by_name: string: Name of person who performed this upload to Debian
-- changed_by_email: string: Email address of person who performed this upload to Debian
-- maintainer_name: string: Name of person/team who maintains this package (as printed in upload metadata)
-- maintainer_email: string: Email address of person/team who maintains this package (as printed in upload metadata)
-- message_id: string: Message ID from which this data was imported. This is assumed to be unique.
+- id (integer): autoincrementing numeric ID; used for foreign keys
+- source (string): Package name (i.e., Debian source package name)
+- version (string): Package version in string format
+- date (int): Epoch timestamp of the date within the upload metadata
+- changed_by_name (string): Name of person who performed this upload to Debian
+- changed_by_email (string): Email address of person who performed this upload to Debian
+- maintainer_name (string): Name of person/team who maintains this package (as printed in upload metadata)
+- maintainer_email (string): Email address of person/team who maintains this package (as printed in upload metadata)
+- message_id (string): Message ID from which this data was imported. This is assumed to be unique.
 
 If you have `sqlite3` installed locally, you can query the file. To load the file, run this command.
 
