@@ -28,8 +28,8 @@ run when the cache is fresh, i.e., if no uploads have occurred since it was prev
 
 ### Run `main.py` to create `upload_history.sqlite`
 
-Run with no arguments to extract all available data from all historic email archives. We use `python3.7` below since
-that is the most recent version on Buster (current Debian release), but you can use any Python >= 3.5.
+Run with no arguments to extract all available data from all email archives starting with January 2008. We use
+`python3.7` below since that is the Python version on Buster (current Debian release); you can use any Python >= 3.5.
 
 ```
 python3.7 -m venv venv
