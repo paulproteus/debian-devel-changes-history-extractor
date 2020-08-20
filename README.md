@@ -12,7 +12,7 @@ with no special privileges.
 
 The short-term purpose is to allow immediate social science analysis of Debian uploads.
 
-The long-term purpose is to replace the code that generates the `upload_history` series of tables in UDD (the Ultimate
+The long-term purpose is to use this code to generate the `upload_history` series of tables in UDD (the Ultimate
 Debian Database). I propose that in the UDD context, we would run this code and allow it to generate a sqlite file,
 then copy the sqlite file's contents into the UDD postgres instance.
 
