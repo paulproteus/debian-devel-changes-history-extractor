@@ -2,6 +2,12 @@
 
 Get a sqlite file with a history of package uploads in Debian.
 
+The short-term purpose is to allow immediate social science analysis of Debian uploads.
+
+The long-term purpose is to use this code to generate the `upload_history` series of tables in UDD (the Ultimate
+Debian Database). I propose that in the UDD context, we would run this code and allow it to generate a sqlite file,
+then copy the sqlite file's contents into the UDD postgres instance.
+
 This program downloads email archives from https://lists.debian.org/debian-devel-changes/, storing them in a
 cache file for performance. It parses the email sent to debian-devel-changes that accompanies every upload to Debian.
 It takes care to keep the cache fresh and not re-download URLs unnecessarily.
@@ -9,12 +15,6 @@ It takes care to keep the cache fresh and not re-download URLs unnecessarily.
 In the future, it would be possible to adjust the code to avoid reading data from the web, e.g., reading email archives
 (mbox files) directly. I personally think reading data from the web is fine; it allows the program to operate
 with no special privileges.
-
-The short-term purpose is to allow immediate social science analysis of Debian uploads.
-
-The long-term purpose is to use this code to generate the `upload_history` series of tables in UDD (the Ultimate
-Debian Database). I propose that in the UDD context, we would run this code and allow it to generate a sqlite file,
-then copy the sqlite file's contents into the UDD postgres instance.
 
 ## Status
 
