@@ -47,8 +47,8 @@ and other temporary data are stored here. If errors are encountered processing a
 text are stored in `~/.cache/ddc-errors.txt`. This cache file may take up to about 4.5GB of disk space in normal
 operation.
 
-You may specify one year and month with `-y` and `-m` respectively. This is primarily intended for development. If you
-lack enough disk space to cache all messages for all years, try running with `-y 2020` (for example).
+You may specify a year and/or month to import by passing `-y` and `-m` respectively. This is primarily intended for
+development. If you lack the disk space to cache all messages for all years, try running with `-y 2020` (for example).
 
 ### Query `upload_history.sqlite`
 
