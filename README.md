@@ -21,8 +21,8 @@ with no special privileges.
 It works splendidly for emails from 2008 onward. (Some emails from pre-2008 trigger parse failures. For information
 about this and other issues, see GitHub issues.)
 
-<!-- commenting out note about speed, since I need to re-run with Python 3.7: On my laptop, it takes 2.214 seconds to
-run when the cache is fresh, i.e., if no uploads have occurred since it was previously run. -->
+On my laptop, it takes 4.8 seconds to run when the cache is fresh, i.e., if no uploads have occurred since it was
+previously run.
 
 ## How to use
 
