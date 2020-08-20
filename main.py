@@ -250,11 +250,11 @@ async def month_index_last_updated(year, month):
 
 
 async def get_cache_stale_months(cache_db, chosen_year, chosen_month):
-    all_months = [(1997, 8), (1997, 9), (1997, 10), (1997, 11), (1997, 12)]
+    all_months = []
     tasks = []
     today_month = datetime.date.today().month
     today_year = datetime.date.today().year
-    for year in range(1998, 2021):
+    for year in range(2008, 2021):
         for month in range(1, 13):
             if year == today_year and month > today_month:
                 break
