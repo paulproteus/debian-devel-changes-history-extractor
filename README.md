@@ -57,7 +57,7 @@ development. If you lack the disk space to cache all messages for all years, try
 - id (integer): autoincrementing numeric ID; used for foreign keys
 - source (string): Package name (i.e., Debian source package name)
 - version (string): Package version in string format
-- date (int): Epoch timestamp of the date within the upload metadata
+- date (datetime): UTC datetime of the date within the upload metadata
 - changed_by_name (string): Name of person who performed this upload to Debian
 - changed_by_email (string): Email address of person who performed this upload to Debian
 - maintainer_name (string): Name of person/team who maintains this package (as printed in upload metadata)
