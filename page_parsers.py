@@ -130,7 +130,7 @@ def metadata_from_message_body(body):
         date, source, version,
         changed_by, changed_by_name, changed_by_email,
         maintainer, maintainer_name, maintainer_email,
-        nmu, changes,
+        nmu,
     )
 
 

@@ -102,8 +102,7 @@ def get_upload_history(cache_db, output_db, year, month):
         maintainer text NOT NULL,
         maintainer_name text NOT NULL,
         maintainer_email NOT NULL,
-        nmu boolean NOT NULL,
-        changes text NOT NULL
+        nmu boolean NOT NULL
     );
     """)
     # Notes about the table and its columns.
@@ -195,8 +194,8 @@ def get_upload_history(cache_db, output_db, year, month):
             date, source, version,
             changed_by, changed_by_name, changed_by_email,
             maintainer, maintainer_name, maintainer_email,
-            nmu, changes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            nmu
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, metadata)
     output_db.execute('COMMIT;')
     print("Computed upload history for {year}-{month:02d}".format(year=year, month=month))
