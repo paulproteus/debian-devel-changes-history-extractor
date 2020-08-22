@@ -69,7 +69,7 @@ async def main():
     for (year, month) in relevant_months:
         get_message_bodies(cache_db, year, month)
     # Create output tables: `upload_history`, etc.
-    output_db = sqlite3.connect("upload_history.sqlite")
+    output_db = sqlite3.connect("upload_history.sqlite", detect_types=sqlite3.PARSE_DECLTYPES)
     for (year, month) in relevant_months:
         get_upload_history(cache_db.cursor(), output_db, year, month)
     # Close asyncio tasks in the aiohttp session.
@@ -93,7 +93,7 @@ BEGIN_PGP_REGEX = re.compile(rb'^ *-+ *BEGIN PGP', re.MULTILINE)
 def get_upload_history(cache_db, output_db, year, month):
     output_db.execute("""CREATE TABLE IF NOT EXISTS upload_history (
         message_id text PRIMARY KEY,
-        date integer NOT NULL,
+        date datetime NOT NULL,
         source text NOT NULL,
         version text NOT NULL,
         changed_by text,

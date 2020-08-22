@@ -1,3 +1,5 @@
+import datetime
+
 import debian.deb822
 import email.headerregistry
 import email.utils
@@ -81,6 +83,57 @@ class MessagePageParser(html.parser.HTMLParser):
 nmu_version_re = re.compile(r"(-\S+\.\d+|\+nmu\d+)$")
 nmu_changelog_re = re.compile(r"\s+\*\s+.*(NMU|non[- ]maintainer)", re.IGNORECASE + re.MULTILINE)
 
+
+def metadata_from_message_body(body):
+    body_parsed = dict(debian.deb822.Deb822(body))
+    source = body_parsed['Source']
+    # Some uploads in 1997 lack a Date header. Ignore them.
+    date_string = body_parsed.get('Date')
+    if date_string is None:
+        return None
+    version = body_parsed['Version']
+    changed_by = body_parsed.get('Changed-By')
+    maintainer = body_parsed['Maintainer']
+    changes = body_parsed['Changes']
+
+    # Convert the date to UTC. This makes accurate querying easier: sqlite3 ignores timezones when querying.
+    date = datetime.datetime.utcfromtimestamp(_parse_date_string(date_string).timestamp())
+
+    # Use AddressHeader not SingleAddressHeader because of headers like
+    # Maintainer: Foo, Bar <example@example.com>
+    # which break SingleAddressHeader (there are "two addresses.")
+    #
+    # Also replace '\n' with ' ' so Python can parse it.
+    parsed_maintainer = email.headerregistry.HeaderRegistry(
+        default_class=email.headerregistry.AddressHeader, use_default_map=False
+    )('maintainer', maintainer.replace('\n', ' '))
+    maintainer_email = parsed_maintainer.addresses[-1].username + '@' + parsed_maintainer.addresses[-1].domain
+    maintainer_name = parsed_maintainer.addresses[-1].display_name
+
+    if changed_by is None:
+        changed_by_email = None
+        changed_by_name = None
+    else:
+        # Use AddressHeader not SingleAddressHeader for similar reasons as the Maintainer header above.
+        parsed_changed_by = email.headerregistry.HeaderRegistry(
+            default_class=email.headerregistry.AddressHeader, use_default_map=False
+        )('changed-by', changed_by)
+        changed_by_email = parsed_changed_by.addresses[-1].username + '@' + parsed_changed_by.addresses[-1].domain
+        changed_by_name = parsed_changed_by.addresses[-1].display_name
+
+    # We use a version number match regular expression, which gives false positives for example
+    # with -x+y.z.w, along with checking a regexp against changes.
+    # This might change in the future, see DEP1 http://wiki.debian.org/NmuDep
+    nmu = bool(nmu_version_re.search(version) and nmu_changelog_re.search(changes))
+
+    return (
+        date, source, version,
+        changed_by, changed_by_name, changed_by_email,
+        maintainer, maintainer_name, maintainer_email,
+        nmu, changes,
+    )
+
+
 # Some messages have invalid time data that Python rejects.
 BAD_TIME_DATA = {
     # Invalid time zones
@@ -121,56 +174,10 @@ BAD_TIME_DATA = {
     "Sun,  15 Jen 2005": "Sun, 15 Jan 2005", "30 Sun 2005": "30 Jan 2005", "31 Sun 2005": "31 Jan 2005",
 }
 
-
-def metadata_from_message_body(body):
-    body_parsed = dict(debian.deb822.Deb822(body))
-    source = body_parsed['Source']
-    # Some uploads in 1997 lack a Date header. Ignore them.
-    date_string = body_parsed.get('Date')
-    if date_string is None:
-        return None
-    version = body_parsed['Version']
-    changed_by = body_parsed.get('Changed-By')
-    maintainer = body_parsed['Maintainer']
-    changes = body_parsed['Changes']
-
+def _parse_date_string(date_string):
     try:
-        date = email.utils.parsedate_to_datetime(date_string).timestamp()
+        return email.utils.parsedate_to_datetime(date_string)
     except Exception:
         for bad_string in BAD_TIME_DATA:
             date_string = date_string.replace(bad_string, BAD_TIME_DATA[bad_string])
-        date = email.utils.parsedate_to_datetime(date_string).timestamp()
-
-    # Use AddressHeader not SingleAddressHeader because of headers like
-    # Maintainer: Foo, Bar <example@example.com>
-    # which break SingleAddressHeader (there are "two addresses.")
-    #
-    # Also replace '\n' with ' ' so Python can parse it.
-    parsed_maintainer = email.headerregistry.HeaderRegistry(
-        default_class=email.headerregistry.AddressHeader, use_default_map=False
-    )('maintainer', maintainer.replace('\n', ' '))
-    maintainer_email = parsed_maintainer.addresses[-1].username + '@' + parsed_maintainer.addresses[-1].domain
-    maintainer_name = parsed_maintainer.addresses[-1].display_name
-
-    if changed_by is None:
-        changed_by_email = None
-        changed_by_name = None
-    else:
-        # Use AddressHeader not SingleAddressHeader for similar reasons as the Maintainer header above.
-        parsed_changed_by = email.headerregistry.HeaderRegistry(
-            default_class=email.headerregistry.AddressHeader, use_default_map=False
-        )('changed-by', changed_by)
-        changed_by_email = parsed_changed_by.addresses[-1].username + '@' + parsed_changed_by.addresses[-1].domain
-        changed_by_name = parsed_changed_by.addresses[-1].display_name
-
-    # We use a version number match regular expression, which gives false positives for example
-    # with -x+y.z.w, along with checking a regexp against changes.
-    # This might change in the future, see DEP1 http://wiki.debian.org/NmuDep
-    nmu = bool(nmu_version_re.search(version) and nmu_changelog_re.search(changes))
-
-    return (
-        date, source, version,
-        changed_by, changed_by_name, changed_by_email,
-        maintainer, maintainer_name, maintainer_email,
-        nmu, changes,
-    )
+        return email.utils.parsedate_to_datetime(date_string)
