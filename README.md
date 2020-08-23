@@ -1,6 +1,8 @@
-## Status
+## Project archived
 
 **Archived** in favor of doing this work within UDD itself.
+
+You may use the contents of this directory under the terms of the WTFPL, version 2, or the Apache License 2.0, at your option.
 
 ## Summary
 
