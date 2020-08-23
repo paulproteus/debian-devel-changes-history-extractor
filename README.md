@@ -1,3 +1,7 @@
+## Status
+
+**Archived** in favor of doing this work within UDD itself.
+
 ## Summary
 
 Get a sqlite file with a history of package uploads in Debian.
